@@ -146,8 +146,13 @@ exports.updateActor = async (req, res) => {
 
     if (req.file) {
       if (actor.Image) {
-        const key = extractKeyFromUrl(actor.Image);
-        if (key) await deleteFromS3(key);
+        // Best-effort cleanup only (do NOT fail update if S3 delete is denied)
+        try {
+          const key = extractKeyFromUrl(actor.Image);
+          if (key) await deleteFromS3(key);
+        } catch (e) {
+          // ignore (common when IAM has explicit deny on s3:DeleteObject)
+        }
       }
       
       // Compress and resize actor image before uploading
@@ -197,16 +202,19 @@ exports.deleteActor = async (req, res) => {
       });
     }
 
-    if (actor.Image) {
-      const key = extractKeyFromUrl(actor.Image);
-      if (key) await deleteFromS3(key);
-    }
-
+    // IMPORTANT:
+    // This project may run with IAM policies that explicitly DENY s3:DeleteObject.
+    // The requested behavior is to remove the actor (and references) from MongoDB ONLY,
+    // and NOT delete any media from S3.
     await Actor.findByIdAndDelete(req.params.id);
 
     res.json({
       success: true,
       message: 'Actor deleted successfully',
+      data: {
+        deletedFromDatabase: true,
+        deletedFromS3: false,
+      },
     });
   } catch (error) {
     res.status(500).json({
