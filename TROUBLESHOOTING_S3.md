@@ -21,7 +21,7 @@ This error occurs when the AWS region configured doesn't match your S3 bucket's 
    - `us-east-1` (N. Virginia)
    - `us-west-2` (Oregon)
    - `eu-west-1` (Ireland)
-   - `ap-south-1` (Mumbai)
+   - `us-east-1` (Mumbai)
    - etc.
 
 3. **Restart your server** after updating `.env`
@@ -72,7 +72,7 @@ aws s3api get-bucket-location --bucket YOUR_BUCKET_NAME --region YOUR_REGION
 | US East (N. Virginia) | `us-east-1` |
 | US West (Oregon) | `us-west-2` |
 | EU (Ireland) | `eu-west-1` |
-| Asia Pacific (Mumbai) | `ap-south-1` |
+| Asia Pacific (Mumbai) | `us-east-1` |
 | Asia Pacific (Singapore) | `ap-southeast-1` |
 
 ### Still Having Issues?
