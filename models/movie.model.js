@@ -223,7 +223,6 @@ movieSchema.pre('save', function (next) {
 });
 
 // Indexes for better query performance
-movieSchema.index({ Slug: 1 });
 movieSchema.index({ Category: 1 });
 movieSchema.index({ Status: 1 });
 movieSchema.index({ IsTrending: 1, IsFeatured: 1 });

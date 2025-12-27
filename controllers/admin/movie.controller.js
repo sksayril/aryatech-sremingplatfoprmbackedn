@@ -211,18 +211,26 @@ exports.updateMovie = async (req, res) => {
     // Handle file uploads to S3
     if (req.files) {
       if (req.files.thumbnail && req.files.thumbnail[0]) {
-        // Delete old thumbnail if exists
+        // Best-effort cleanup (do NOT fail update if S3 delete is denied)
         if (movie.Thumbnail) {
-          const key = extractKeyFromUrl(movie.Thumbnail);
-          if (key) await deleteFromS3(key);
+          try {
+            const key = extractKeyFromUrl(movie.Thumbnail);
+            if (key) await deleteFromS3(key);
+          } catch (e) {
+            // ignore (common when IAM has explicit deny on s3:DeleteObject)
+          }
         }
         const uploadResult = await uploadFileToS3(req.files.thumbnail[0], S3_BUCKETS.THUMBNAILS);
         req.body.Thumbnail = uploadResult.url;
       }
       if (req.files.poster && req.files.poster[0]) {
         if (movie.Poster) {
-          const key = extractKeyFromUrl(movie.Poster);
-          if (key) await deleteFromS3(key);
+          try {
+            const key = extractKeyFromUrl(movie.Poster);
+            if (key) await deleteFromS3(key);
+          } catch (e) {
+            // ignore (common when IAM has explicit deny on s3:DeleteObject)
+          }
         }
         const uploadResult = await uploadFileToS3(req.files.poster[0], S3_BUCKETS.THUMBNAILS);
         req.body.Poster = uploadResult.url;
@@ -274,33 +282,19 @@ exports.deleteMovie = async (req, res) => {
       });
     }
 
-    // Delete associated files from S3
-    if (movie.Thumbnail) {
-      const key = extractKeyFromUrl(movie.Thumbnail);
-      if (key) await deleteFromS3(key);
-    }
-    if (movie.Poster) {
-      const key = extractKeyFromUrl(movie.Poster);
-      if (key) await deleteFromS3(key);
-    }
-    if (movie.Videos && movie.Videos.length > 0) {
-      for (const video of movie.Videos) {
-        const key = extractKeyFromUrl(video.Url);
-        if (key) await deleteFromS3(key);
-      }
-    }
-    if (movie.Subtitles && movie.Subtitles.length > 0) {
-      for (const subtitle of movie.Subtitles) {
-        const key = extractKeyFromUrl(subtitle.Url);
-        if (key) await deleteFromS3(key);
-      }
-    }
-
+    // IMPORTANT:
+    // This project may run with IAM policies that explicitly DENY s3:DeleteObject.
+    // The requested behavior is to remove the movie (and references) from MongoDB ONLY,
+    // and NOT delete any media from S3.
     await Movie.findByIdAndDelete(req.params.id);
 
     res.json({
       success: true,
       message: 'Movie deleted successfully',
+      data: {
+        deletedFromDatabase: true,
+        deletedFromS3: false,
+      },
     });
   } catch (error) {
     res.status(500).json({
