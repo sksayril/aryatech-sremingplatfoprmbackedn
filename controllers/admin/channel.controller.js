@@ -171,11 +171,7 @@ exports.deleteChannel = async (req, res) => {
       });
     }
 
-    if (channel.Logo) {
-      const key = extractKeyFromUrl(channel.Logo);
-      if (key) await deleteFromS3(key);
-    }
-
+    // Only delete from MongoDB, not from S3
     await Channel.findByIdAndDelete(req.params.id);
 
     res.json({
