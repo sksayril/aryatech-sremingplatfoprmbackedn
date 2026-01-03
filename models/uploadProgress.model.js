@@ -60,7 +60,6 @@ const uploadProgressSchema = new mongoose.Schema(
 );
 
 // Indexes
-uploadProgressSchema.index({ UploadId: 1 });
 uploadProgressSchema.index({ User: 1, Status: 1 });
 uploadProgressSchema.index({ Movie: 1 });
 
