@@ -1352,9 +1352,187 @@ limit: 20 (optional)
 
 ---
 
-### 5. Get Movie by Slug
+### 5. Get Movie by ID
 
-Get detailed movie information by slug.
+Get detailed movie information by ID. Returns complete movie details including all videos, subtitles, cast, channel, categories, watch history (if authenticated), favorites, likes, and top comments.
+
+**Endpoint:** `GET /api/movies/id/:id`
+
+**Path Parameters:**
+- `id` (required) - Movie ID
+
+**Headers (Optional):**
+```
+Authorization: Bearer <token> - For watch history and favorites
+X-Country-Code: US
+```
+
+**Example Request:**
+```bash
+curl -X GET "https://api.example.com/api/movies/id/65a1b2c3d4e5f6g7h8i9j0k6" \
+  -H "Authorization: Bearer <token>" \
+  -H "X-Country-Code: US"
+```
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "_id": "65a1b2c3d4e5f6g7h8i9j0k6",
+    "Title": "The Amazing Movie",
+    "Slug": "the-amazing-movie",
+    "Description": "A thrilling adventure movie with amazing visuals",
+    "Thumbnail": "https://bucket.s3.region.amazonaws.com/thumbnails/thumb.jpg",
+    "Poster": "https://bucket.s3.region.amazonaws.com/thumbnails/poster.jpg",
+    "TrailerUrl": "https://example.com/trailer.mp4",
+    "Videos": [
+      {
+        "Quality": "480p",
+        "Url": "https://bucket.s3.region.amazonaws.com/movies/video480p.mp4",
+        "Duration": 7200,
+        "FileSize": 1073741824,
+        "IsOriginal": false
+      },
+      {
+        "Quality": "720p",
+        "Url": "https://bucket.s3.region.amazonaws.com/movies/video720p.mp4",
+        "Duration": 7200,
+        "FileSize": 2147483648,
+        "IsOriginal": false
+      },
+      {
+        "Quality": "1080p",
+        "Url": "https://bucket.s3.region.amazonaws.com/movies/video1080p.mp4",
+        "Duration": 7200,
+        "FileSize": 4294967296,
+        "IsOriginal": true
+      }
+    ],
+    "Subtitles": [
+      {
+        "Language": "English",
+        "LanguageCode": "en",
+        "Url": "https://bucket.s3.region.amazonaws.com/subtitles/en.srt"
+      },
+      {
+        "Language": "Spanish",
+        "LanguageCode": "es",
+        "Url": "https://bucket.s3.region.amazonaws.com/subtitles/es.srt"
+      }
+    ],
+    "Category": {
+      "_id": "65a1b2c3d4e5f6g7h8i9j0k3",
+      "Name": "Action",
+      "Slug": "action"
+    },
+    "SubCategory": {
+      "_id": "65a1b2c3d4e5f6g7h8i9j0k4",
+      "Name": "Superhero",
+      "Slug": "superhero"
+    },
+    "SubSubCategory": {
+      "_id": "65a1b2c3d4e5f6g7h8i9j0k5",
+      "Name": "Marvel",
+      "Slug": "marvel"
+    },
+    "Channel": {
+      "_id": "65a1b2c3d4e5f6g7h8i9j0k6",
+      "Name": "HBO",
+      "Slug": "hbo",
+      "Logo": "https://bucket.s3.region.amazonaws.com/thumbnails/hbo-logo.jpg",
+      "Description": "Premium entertainment channel",
+      "IsActive": true
+    },
+    "Views": 15000,
+    "Likes": 500,
+    "Comments": 120,
+    "Rating": 4.5,
+    "IsPremium": false,
+    "IsTrending": true,
+    "IsFeatured": false,
+    "Tags": ["action", "superhero", "2024"],
+    "Genre": ["Action", "Adventure"],
+    "Country": "United States",
+    "Language": "English",
+    "Year": 2024,
+    "ReleaseDate": "2024-01-15T00:00:00.000Z",
+    "Director": "Christopher Nolan",
+    "AgeRestriction": "PG-13",
+    "Cast": [
+      {
+        "_id": "65a1b2c3d4e5f6g7h8i9j0k8",
+        "Name": "Tom Hanks",
+        "Slug": "tom-hanks",
+        "Image": "https://bucket.s3.region.amazonaws.com/thumbnails/tom-hanks.jpg",
+        "Description": "Academy Award-winning actor",
+        "DateOfBirth": "1956-07-09T00:00:00.000Z",
+        "Nationality": "American"
+      },
+      {
+        "_id": "65a1b2c3d4e5f6g7h8i9j0k9",
+        "Name": "Meryl Streep",
+        "Slug": "meryl-streep",
+        "Image": "https://bucket.s3.region.amazonaws.com/thumbnails/meryl-streep.jpg",
+        "Description": "Academy Award-winning actress",
+        "DateOfBirth": "1949-06-22T00:00:00.000Z",
+        "Nationality": "American"
+      }
+    ],
+    "watchHistory": {
+      "watchedDuration": 3600,
+      "totalDuration": 7200,
+      "lastWatchedAt": "2024-01-14T20:30:00.000Z",
+      "isCompleted": false
+    },
+    "isFavorite": true,
+    "isLiked": true,
+    "topComments": [
+      {
+        "_id": "65a1b2c3d4e5f6g7h8i9j0k10",
+        "Comment": "Amazing movie! Best of the year!",
+        "Likes": 150,
+        "User": {
+          "_id": "65a1b2c3d4e5f6g7h8i9j0k1",
+          "Name": "John Doe",
+          "Email": "john@example.com",
+          "ProfilePicture": "https://example.com/profile.jpg"
+        },
+        "Replies": [
+          {
+            "Comment": "I agree!",
+            "Likes": 25,
+            "User": {
+              "Name": "Jane Smith",
+              "Email": "jane@example.com"
+            },
+            "createdAt": "2024-01-15T11:00:00.000Z"
+          }
+        ],
+        "createdAt": "2024-01-15T10:30:00.000Z"
+      }
+    ],
+    "createdAt": "2024-01-15T10:30:00.000Z",
+    "updatedAt": "2024-01-15T10:30:00.000Z"
+  }
+}
+```
+
+**Note:** This endpoint returns all movie details including:
+- All video qualities (480p, 720p, 1080p)
+- All subtitles with languages
+- Complete cast information with actor details
+- Channel information with logo
+- Category hierarchy (Category, SubCategory, SubSubCategory)
+- Watch history (if user is authenticated)
+- Favorite and like status (if user is authenticated)
+- Top comments with replies
+
+---
+
+### 6. Get Movie by Slug
+
+Get detailed movie information by slug. Returns the same complete details as Get Movie by ID.
 
 **Endpoint:** `GET /api/movies/:slug`
 
@@ -1426,11 +1604,32 @@ X-Country-Code: US
     "Genre": ["Action", "Adventure"],
     "Country": "United States",
     "Language": "English",
+    "Channel": {
+      "_id": "65a1b2c3d4e5f6g7h8i9j0k6",
+      "Name": "HBO",
+      "Slug": "hbo",
+      "Logo": "https://bucket.s3.region.amazonaws.com/thumbnails/hbo-logo.jpg",
+      "Description": "Premium entertainment channel",
+      "IsActive": true
+    },
     "Cast": [
       {
         "_id": "65a1b2c3d4e5f6g7h8i9j0k8",
         "Name": "Tom Hanks",
-        "Image": "https://bucket.s3.region.amazonaws.com/thumbnails/tom-hanks.jpg"
+        "Slug": "tom-hanks",
+        "Image": "https://bucket.s3.region.amazonaws.com/thumbnails/tom-hanks.jpg",
+        "Description": "Academy Award-winning actor",
+        "DateOfBirth": "1956-07-09T00:00:00.000Z",
+        "Nationality": "American"
+      },
+      {
+        "_id": "65a1b2c3d4e5f6g7h8i9j0k9",
+        "Name": "Meryl Streep",
+        "Slug": "meryl-streep",
+        "Image": "https://bucket.s3.region.amazonaws.com/thumbnails/meryl-streep.jpg",
+        "Description": "Academy Award-winning actress",
+        "DateOfBirth": "1949-06-22T00:00:00.000Z",
+        "Nationality": "American"
       }
     ],
     "watchHistory": {
@@ -1467,6 +1666,169 @@ X-Country-Code: US
   }
 }
 ```
+
+---
+
+### 7. Get Related Videos
+
+Get videos related to a particular video ID. Finds videos based on tags, genre, cast, subcategory, and channel.
+
+**Endpoint:** `GET /api/movies/related/:id`
+
+**Path Parameters:**
+- `id` (required) - Movie/Video ID
+
+**Query Parameters:**
+```
+page: 1 (optional) - Page number
+limit: 30 (optional) - Number of videos per page
+```
+
+**Headers (Optional):**
+```
+X-Country-Code: US - User's country code for content filtering
+```
+
+**Example Request:**
+```bash
+curl -X GET "https://api.example.com/api/movies/related/65a1b2c3d4e5f6g7h8i9j0k6?page=1&limit=30" \
+  -H "X-Country-Code: US"
+```
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "_id": "65a1b2c3d4e5f6g7h8i9j0k7",
+      "Title": "Related Action Movie",
+      "Slug": "related-action-movie",
+      "Description": "Another thrilling action movie",
+      "Thumbnail": "https://bucket.s3.region.amazonaws.com/thumbnails/thumb2.jpg",
+      "Poster": "https://bucket.s3.region.amazonaws.com/thumbnails/poster2.jpg",
+      "Category": {
+        "_id": "65a1b2c3d4e5f6g7h8i9j0k3",
+        "Name": "Action",
+        "Slug": "action"
+      },
+      "SubCategory": {
+        "_id": "65a1b2c3d4e5f6g7h8i9j0k4",
+        "Name": "Superhero",
+        "Slug": "superhero"
+      },
+      "Channel": {
+        "_id": "65a1b2c3d4e5f6g7h8i9j0k6",
+        "Name": "HBO",
+        "Slug": "hbo",
+        "Logo": "https://bucket.s3.region.amazonaws.com/thumbnails/hbo-logo.jpg"
+      },
+      "Views": 12000,
+      "Likes": 450,
+      "Rating": 4.3,
+      "IsPremium": false,
+      "Tags": ["action", "superhero", "2024"],
+      "Genre": ["Action", "Adventure"],
+      "Country": "United States",
+      "Language": "English",
+      "createdAt": "2024-01-14T10:30:00.000Z"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 30,
+    "total": 45,
+    "pages": 2
+  }
+}
+```
+
+**How Related Videos Are Determined:**
+- Videos with the same **SubCategory**
+- Videos with matching **Tags** (at least one common tag)
+- Videos with matching **Genre** (at least one common genre)
+- Videos with matching **Cast** members (at least one common cast member)
+- Videos from the same **Channel**
+- If no matches found, falls back to videos from the same **Category**
+
+---
+
+### 8. Get Similar Videos
+
+Get videos similar to a particular video ID. Finds videos from the same category.
+
+**Endpoint:** `GET /api/movies/similar/:id`
+
+**Path Parameters:**
+- `id` (required) - Movie/Video ID
+
+**Query Parameters:**
+```
+page: 1 (optional) - Page number
+limit: 30 (optional) - Number of videos per page
+```
+
+**Headers (Optional):**
+```
+X-Country-Code: US - User's country code for content filtering
+```
+
+**Example Request:**
+```bash
+curl -X GET "https://api.example.com/api/movies/similar/65a1b2c3d4e5f6g7h8i9j0k6?page=1&limit=30" \
+  -H "X-Country-Code: US"
+```
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "_id": "65a1b2c3d4e5f6g7h8i9j0k8",
+      "Title": "Similar Action Movie",
+      "Slug": "similar-action-movie",
+      "Description": "Another action-packed movie",
+      "Thumbnail": "https://bucket.s3.region.amazonaws.com/thumbnails/thumb3.jpg",
+      "Poster": "https://bucket.s3.region.amazonaws.com/thumbnails/poster3.jpg",
+      "Category": {
+        "_id": "65a1b2c3d4e5f6g7h8i9j0k3",
+        "Name": "Action",
+        "Slug": "action"
+      },
+      "SubCategory": {
+        "_id": "65a1b2c3d4e5f6g7h8i9j0k4",
+        "Name": "Superhero",
+        "Slug": "superhero"
+      },
+      "Views": 18000,
+      "Likes": 600,
+      "Rating": 4.6,
+      "IsPremium": false,
+      "Tags": ["action", "thriller"],
+      "Genre": ["Action"],
+      "Country": "United States",
+      "Language": "English",
+      "createdAt": "2024-01-13T10:30:00.000Z"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 30,
+    "total": 80,
+    "pages": 3
+  }
+}
+```
+
+**How Similar Videos Are Determined:**
+- Videos from the same **Category** as the specified video
+- Excludes the video itself
+- Sorted by views and creation date (most popular first)
+
+**Difference Between Related and Similar Videos:**
+- **Related Videos**: More comprehensive matching based on multiple criteria (tags, genre, cast, subcategory, channel)
+- **Similar Videos**: Simpler matching based on category only
 
 ---
 
