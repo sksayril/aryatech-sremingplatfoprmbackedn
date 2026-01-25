@@ -39,6 +39,9 @@ router.get('/search', movieController.searchMovies);
 // Get all channels
 router.get('/channels', movieController.getAllChannels);
 
+// Get all actors
+router.get('/actors', movieController.getAllActors);
+
 // Get movie by ID (must come before /:slug)
 router.get('/id/:id', optionalAuth, movieController.getMovieById);
 

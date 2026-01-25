@@ -24,6 +24,7 @@ Authorization: Bearer <user-jwt-token>
 4. [Search APIs](#search-apis)
 5. [Trending & New Videos](#trending--new-videos)
 6. [Similar Videos](#similar-videos)
+7. [Actors/Cast APIs](#actorscast-apis)
 
 ---
 
@@ -1056,6 +1057,111 @@ Get list of all active channels.
 
 ---
 
+## 🎭 Actors/Cast APIs
+
+### 1. Get All Actors
+
+Get list of all active actors (cast members). Supports both paginated and non-paginated responses.
+
+**Endpoint:** `GET /api/movies/actors`
+
+**Query Parameters:**
+- `page` (optional) - Page number. If omitted, returns all actors without pagination
+- `limit` (optional) - Items per page (default: 30, maximum: 100). If omitted, returns all actors without pagination
+- `search` (optional) - Search by actor name or description
+- `sortBy` (optional) - Sort field (default: 'SortOrder', options: 'SortOrder', 'Name', 'createdAt')
+- `sortOrder` (optional) - Sort order (default: 'asc', options: 'asc', 'desc')
+
+**Note:** If both `page` and `limit` are omitted, the endpoint returns all actors without pagination metadata.
+
+**Example Requests:**
+
+**Get all actors (no pagination):**
+```
+GET /api/movies/actors
+GET /api/movies/actors?search=tom&sortBy=Name
+```
+
+**Get actors with pagination:**
+```
+GET /api/movies/actors?page=1&limit=30
+GET /api/movies/actors?page=1&limit=30&search=tom&sortBy=Name&sortOrder=asc
+```
+
+**Success Response (200) - Without Pagination:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "_id": "65a1b2c3d4e5f6g7h8i9j0k8",
+      "Name": "Tom Hanks",
+      "Slug": "tom-hanks",
+      "Description": "Academy Award-winning actor known for his versatile roles",
+      "Image": "https://bucket.s3.region.amazonaws.com/thumbnails/tom-hanks.jpg",
+      "DateOfBirth": "1956-07-09T00:00:00.000Z",
+      "Nationality": "American",
+      "IsActive": true,
+      "SortOrder": 1,
+      "createdAt": "2024-01-01T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z"
+    },
+    {
+      "_id": "65a1b2c3d4e5f6g7h8i9j0k9",
+      "Name": "Leonardo DiCaprio",
+      "Slug": "leonardo-dicaprio",
+      "Description": "Academy Award-winning actor and environmental activist",
+      "Image": "https://bucket.s3.region.amazonaws.com/thumbnails/leonardo-dicaprio.jpg",
+      "DateOfBirth": "1974-11-11T00:00:00.000Z",
+      "Nationality": "American",
+      "IsActive": true,
+      "SortOrder": 2,
+      "createdAt": "2024-01-01T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z"
+    }
+  ]
+}
+```
+
+**Success Response (200) - With Pagination:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "_id": "65a1b2c3d4e5f6g7h8i9j0k8",
+      "Name": "Tom Hanks",
+      "Slug": "tom-hanks",
+      "Description": "Academy Award-winning actor known for his versatile roles",
+      "Image": "https://bucket.s3.region.amazonaws.com/thumbnails/tom-hanks.jpg",
+      "DateOfBirth": "1956-07-09T00:00:00.000Z",
+      "Nationality": "American",
+      "IsActive": true,
+      "SortOrder": 1,
+      "createdAt": "2024-01-01T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 30,
+    "total": 150,
+    "pages": 5
+  }
+}
+```
+
+**Error Response (500):**
+```json
+{
+  "success": false,
+  "message": "Failed to fetch actors",
+  "error": "Detailed error message"
+}
+```
+
+---
+
 ## 📄 Pagination
 
 All list endpoints support pagination with the following query parameters:
@@ -1150,6 +1256,7 @@ All endpoints may return these error responses:
 | `/api/movies/featured` | GET | Get featured videos | Yes (30/page) |
 | `/api/movies/similar/:id` | GET | Get similar videos | Yes (30/page) |
 | `/api/movies/channels` | GET | Get all channels | No |
+| `/api/movies/actors` | GET | Get all actors/cast | Optional |
 
 ---
 
@@ -1169,6 +1276,12 @@ GET /api/movies/categories/action/subcategories
 
 # 4. Get videos by subcategory
 GET /api/movies/subcategory/superhero?page=1&limit=30
+
+# 5. Get all actors (without pagination)
+GET /api/movies/actors
+
+# 6. Get all actors (with pagination)
+GET /api/movies/actors?page=1&limit=30
 ```
 
 ### Search and Browse
@@ -1198,6 +1311,12 @@ GET /api/movies/the-amazing-movie
 
 # 3. Get similar videos
 GET /api/movies/similar/65a1b2c3d4e5f6g7h8i9j0k6?page=1&limit=30
+
+# 4. Get all actors (without pagination)
+GET /api/movies/actors
+
+# 5. Get all actors (with pagination and search)
+GET /api/movies/actors?page=1&limit=30&search=tom
 ```
 
 ---

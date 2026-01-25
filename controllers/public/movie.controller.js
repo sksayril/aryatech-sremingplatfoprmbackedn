@@ -437,6 +437,86 @@ exports.getAllChannels = async (req, res) => {
 };
 
 /**
+ * Get all actors (public)
+ * Supports both paginated and non-paginated responses
+ * If page or limit is not provided, returns all actors without pagination
+ */
+exports.getAllActors = async (req, res) => {
+  try {
+    const { 
+      page, 
+      limit, 
+      search, 
+      sortBy = 'SortOrder', 
+      sortOrder = 'asc' 
+    } = req.query;
+    
+    const query = {
+      IsActive: true, // Only return active actors
+    };
+
+    // Search by name or description
+    if (search) {
+      query.$or = [
+        { Name: { $regex: search, $options: 'i' } },
+        { Description: { $regex: search, $options: 'i' } },
+        { Slug: { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    // Build sort object
+    const sort = {};
+    sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
+
+    // Check if pagination is requested
+    const usePagination = page !== undefined || limit !== undefined;
+    
+    let actors;
+    let response;
+
+    if (usePagination) {
+      // Paginated response
+      const pageNum = parseInt(page) || 1;
+      const limitNum = parseInt(limit) || 30;
+      
+      actors = await Actor.find(query)
+        .sort(sort)
+        .limit(limitNum)
+        .skip((pageNum - 1) * limitNum);
+
+      const total = await Actor.countDocuments(query);
+
+      response = {
+        success: true,
+        data: actors,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total,
+          pages: Math.ceil(total / limitNum),
+        },
+      };
+    } else {
+      // Non-paginated response - return all actors
+      actors = await Actor.find(query).sort(sort);
+
+      response = {
+        success: true,
+        data: actors,
+      };
+    }
+
+    res.json(response);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch actors',
+      error: error.message,
+    });
+  }
+};
+
+/**
  * Get all movies (public)
  */
 exports.getAllMovies = async (req, res) => {
