@@ -1044,14 +1044,75 @@ exports.getAllVideosByCategory = async (req, res) => {
       ],
     };
 
-    const movies = await Movie.find(query)
-      .populate('Category', 'Name Slug')
-      .populate('SubCategory', 'Name Slug')
-      .populate('Channel', 'Name Slug')
-      .select('-Videos -Subtitles')
-      .sort({ createdAt: -1 })
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
+    // Use aggregation pipeline to shuffle results with random sorting
+    const skip = (page - 1) * limit;
+    const limitNum = parseInt(limit);
+
+    const movies = await Movie.aggregate([
+      { $match: query },
+      {
+        $addFields: {
+          // Add a random field for sorting - $rand generates different value each time
+          // This ensures different order on every request
+          randomSort: { $rand: {} }
+        }
+      },
+      { $sort: { randomSort: 1 } },
+      { $skip: skip },
+      { $limit: limitNum },
+      {
+        $lookup: {
+          from: 'categories',
+          localField: 'Category',
+          foreignField: '_id',
+          as: 'Category',
+          pipeline: [{ $project: { Name: 1, Slug: 1 } }]
+        }
+      },
+      {
+        $lookup: {
+          from: 'subcategories',
+          localField: 'SubCategory',
+          foreignField: '_id',
+          as: 'SubCategory',
+          pipeline: [{ $project: { Name: 1, Slug: 1 } }]
+        }
+      },
+      {
+        $lookup: {
+          from: 'channels',
+          localField: 'Channel',
+          foreignField: '_id',
+          as: 'Channel',
+          pipeline: [{ $project: { Name: 1, Slug: 1 } }]
+        }
+      },
+      {
+        $unwind: {
+          path: '$Category',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $unwind: {
+          path: '$SubCategory',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $unwind: {
+          path: '$Channel',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $project: {
+          Videos: 0,
+          Subtitles: 0,
+          randomSort: 0
+        }
+      }
+    ]);
 
     const total = await Movie.countDocuments(query);
 
