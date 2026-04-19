@@ -1,9 +1,11 @@
 const Movie = require('../../models/movie.model');
 const UploadProgress = require('../../models/uploadProgress.model');
-const { MOVIE_STATUS, MOVIE_QUALITIES, S3_BUCKETS } = require('../../config/constants');
+const { S3_BUCKETS, MOVIE_UPLOAD_LIMITS } = require('../../config/constants');
 const { uploadFileToS3 } = require('../../middleware/aws.setup'); // Primary S3 upload method using multer memory storage
-const { queueVideoConversion } = require('../../services/videoConversion.service');
-const { queueUpload, getMovieUploadProgress } = require('../../services/uploadQueue.service');
+const {
+  normalizeMovieUploadBody,
+  assertSubCategoryMatchesCategory,
+} = require('../../utils/parseMovieUploadBody');
 const crypto = require('crypto');
 
 /**
@@ -13,9 +15,33 @@ exports.createMovieWithProgress = async (req, res) => {
   try {
     const uploadId = `upload-${Date.now()}-${crypto.randomBytes(8).toString('hex')}`;
     const movieData = {
-      ...req.body,
+      ...normalizeMovieUploadBody(req.body),
       CreatedBy: req.user._id,
     };
+
+    await assertSubCategoryMatchesCategory(movieData.Category, movieData.SubCategory);
+
+    if (!movieData.Title || !String(movieData.Title).trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Title is required.',
+        uploadLimits: MOVIE_UPLOAD_LIMITS,
+      });
+    }
+    if (!movieData.Category) {
+      return res.status(400).json({
+        success: false,
+        message: 'Main category is required (field: Category, or alias mainCategory / categoryId).',
+        uploadLimits: MOVIE_UPLOAD_LIMITS,
+      });
+    }
+    if (req.files && req.files.video && req.files.video[0] && !(req.files.thumbnail && req.files.thumbnail[0])) {
+      return res.status(400).json({
+        success: false,
+        message: 'Thumbnail is required when uploading a video file.',
+        uploadLimits: MOVIE_UPLOAD_LIMITS,
+      });
+    }
 
     // Handle thumbnail upload
     if (req.files && req.files.thumbnail && req.files.thumbnail[0]) {
@@ -95,7 +121,7 @@ exports.createMovieWithProgress = async (req, res) => {
       }
     }
 
-    // Handle video upload with auto-conversion
+    // Handle video upload (single file; no server-side transcoding)
     if (req.files && req.files.video && req.files.video[0]) {
       const videoFile = req.files.video[0];
       const videoProgress = await UploadProgress.create({
@@ -130,37 +156,11 @@ exports.createMovieWithProgress = async (req, res) => {
         }];
 
         await UploadProgress.findByIdAndUpdate(videoProgress._id, {
-          Status: 'processing',
+          Status: 'completed',
           Progress: 100,
           UploadedSize: videoFile.size,
           S3Key: uploadResult.key,
           S3Url: uploadResult.url,
-        });
-
-        // Queue video conversion for other qualities
-        if (sourceQuality === '1080p') {
-          const conversionJob = await queueVideoConversion(
-            uploadResult.url,
-            null, // movieId will be set after movie creation
-            ['480p', '720p']
-          );
-          
-          // Store conversion job info
-          movieData.ConversionJobId = conversionJob.jobId;
-          movieData.PendingQualities = ['480p', '720p'];
-        } else if (sourceQuality === '720p') {
-          const conversionJob = await queueVideoConversion(
-            uploadResult.url,
-            null,
-            ['480p']
-          );
-          movieData.ConversionJobId = conversionJob.jobId;
-          movieData.PendingQualities = ['480p'];
-        }
-
-        await UploadProgress.findByIdAndUpdate(videoProgress._id, {
-          Status: 'processing',
-          Progress: 75,
         });
       } catch (error) {
         await UploadProgress.findByIdAndUpdate(videoProgress._id, {
@@ -225,32 +225,6 @@ exports.createMovieWithProgress = async (req, res) => {
       }
     }
 
-    // Parse JSON fields if they're strings
-    if (typeof movieData.MetaKeywords === 'string') {
-      movieData.MetaKeywords = JSON.parse(movieData.MetaKeywords);
-    }
-    if (typeof movieData.Tags === 'string') {
-      movieData.Tags = JSON.parse(movieData.Tags);
-    }
-    if (typeof movieData.Genre === 'string') {
-      movieData.Genre = JSON.parse(movieData.Genre);
-    }
-    // Handle Cast - can be array of actor IDs (JSON string) or comma-separated string
-    if (movieData.Cast) {
-      if (typeof movieData.Cast === 'string') {
-        try {
-          movieData.Cast = JSON.parse(movieData.Cast);
-        } catch (e) {
-          // If not JSON, treat as comma-separated string
-          movieData.Cast = movieData.Cast.split(',').map(id => id.trim()).filter(id => id);
-        }
-      }
-      // Ensure Cast is an array
-      if (!Array.isArray(movieData.Cast)) {
-        movieData.Cast = [movieData.Cast];
-      }
-    }
-
     // Create movie
     const movie = await Movie.create(movieData);
 
@@ -277,12 +251,18 @@ exports.createMovieWithProgress = async (req, res) => {
       success: true,
       message: 'Movie created successfully',
       data: movieResponse,
+      upload: {
+        uploadLimits: MOVIE_UPLOAD_LIMITS,
+        progressUrl: `/api/admin/movies/upload-progress/${uploadId}`,
+      },
     });
   } catch (error) {
-    res.status(400).json({
+    const status = error.statusCode && Number.isInteger(error.statusCode) ? error.statusCode : 400;
+    res.status(status).json({
       success: false,
       message: 'Failed to create movie',
       error: error.message,
+      uploadLimits: MOVIE_UPLOAD_LIMITS,
     });
   }
 };
@@ -303,17 +283,29 @@ exports.getUploadProgress = async (req, res) => {
       ? progress.reduce((sum, p) => sum + p.Progress, 0) / progress.length
       : 0;
 
+    const files = progress.map((p) => ({
+      uploadId: p.UploadId,
+      fileName: p.FileName,
+      fileType: p.FileType,
+      progress: p.Progress,
+      totalSize: p.TotalSize,
+      uploadedSize: p.UploadedSize,
+      status: p.Status,
+      error: p.Error,
+    }));
+
     res.json({
       success: true,
       data: {
         uploadId,
         overallProgress: Math.round(overallProgress),
-        files: progress,
-        status: progress.every(p => p.Status === 'completed')
+        files,
+        status: progress.every((p) => p.Status === 'completed')
           ? 'completed'
-          : progress.some(p => p.Status === 'failed')
-          ? 'failed'
-          : 'processing',
+          : progress.some((p) => p.Status === 'failed')
+            ? 'failed'
+            : 'processing',
+        uploadLimits: MOVIE_UPLOAD_LIMITS,
       },
     });
   } catch (error) {
@@ -321,6 +313,7 @@ exports.getUploadProgress = async (req, res) => {
       success: false,
       message: 'Failed to fetch upload progress',
       error: error.message,
+      uploadLimits: MOVIE_UPLOAD_LIMITS,
     });
   }
 };

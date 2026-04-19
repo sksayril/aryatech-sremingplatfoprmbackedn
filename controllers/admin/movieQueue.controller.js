@@ -5,7 +5,11 @@
 
 const Movie = require('../../models/movie.model');
 const { queueUpload, getMovieUploadProgress, retryJob } = require('../../services/uploadQueue.service');
-const { S3_BUCKETS } = require('../../config/constants');
+const { S3_BUCKETS, MOVIE_UPLOAD_LIMITS } = require('../../config/constants');
+const {
+  normalizeMovieUploadBody,
+  assertSubCategoryMatchesCategory,
+} = require('../../utils/parseMovieUploadBody');
 
 /**
  * Create movie and queue files for background upload
@@ -13,34 +17,32 @@ const { S3_BUCKETS } = require('../../config/constants');
 exports.createMovieAndQueueUploads = async (req, res) => {
   try {
     const movieData = {
-      ...req.body,
+      ...normalizeMovieUploadBody(req.body),
       CreatedBy: req.user._id,
     };
 
-    // Parse JSON fields if they're strings
-    if (typeof movieData.MetaKeywords === 'string') {
-      movieData.MetaKeywords = JSON.parse(movieData.MetaKeywords);
+    await assertSubCategoryMatchesCategory(movieData.Category, movieData.SubCategory);
+
+    if (!movieData.Title || !String(movieData.Title).trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Title is required.',
+        uploadLimits: MOVIE_UPLOAD_LIMITS,
+      });
     }
-    if (typeof movieData.Tags === 'string') {
-      movieData.Tags = JSON.parse(movieData.Tags);
+    if (!movieData.Category) {
+      return res.status(400).json({
+        success: false,
+        message: 'Main category is required (field: Category, or alias mainCategory / categoryId).',
+        uploadLimits: MOVIE_UPLOAD_LIMITS,
+      });
     }
-    if (typeof movieData.Genre === 'string') {
-      movieData.Genre = JSON.parse(movieData.Genre);
-    }
-    // Handle Cast - can be array of actor IDs (JSON string) or comma-separated string
-    if (movieData.Cast) {
-      if (typeof movieData.Cast === 'string') {
-        try {
-          movieData.Cast = JSON.parse(movieData.Cast);
-        } catch (e) {
-          // If not JSON, treat as comma-separated string
-          movieData.Cast = movieData.Cast.split(',').map(id => id.trim()).filter(id => id);
-        }
-      }
-      // Ensure Cast is an array
-      if (!Array.isArray(movieData.Cast)) {
-        movieData.Cast = [movieData.Cast];
-      }
+    if (req.files && req.files.video && req.files.video[0] && !(req.files.thumbnail && req.files.thumbnail[0])) {
+      return res.status(400).json({
+        success: false,
+        message: 'Thumbnail is required when uploading a video file.',
+        uploadLimits: MOVIE_UPLOAD_LIMITS,
+      });
     }
 
     // Create movie first (without file URLs)
@@ -141,13 +143,17 @@ exports.createMovieAndQueueUploads = async (req, res) => {
           fileName: job.FileName,
           status: job.Status,
         })),
+        uploadProgressUrl: `/api/admin/movies/${movie._id}/upload-progress`,
+        uploadLimits: MOVIE_UPLOAD_LIMITS,
       },
     });
   } catch (error) {
-    res.status(400).json({
+    const status = error.statusCode && Number.isInteger(error.statusCode) ? error.statusCode : 400;
+    res.status(status).json({
       success: false,
       message: 'Failed to create movie and queue uploads',
       error: error.message,
+      uploadLimits: MOVIE_UPLOAD_LIMITS,
     });
   }
 };
@@ -188,13 +194,17 @@ exports.getMovieUploadProgress = async (req, res) => {
 
     res.json({
       success: true,
-      data: progress,
+      data: {
+        ...progress,
+        uploadLimits: MOVIE_UPLOAD_LIMITS,
+      },
     });
   } catch (error) {
     res.status(500).json({
       success: false,
       message: 'Failed to get upload progress',
       error: error.message,
+      uploadLimits: MOVIE_UPLOAD_LIMITS,
     });
   }
 };

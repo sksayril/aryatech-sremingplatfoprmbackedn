@@ -51,8 +51,10 @@ Content-Type: multipart/form-data
 **Required Fields:**
 ```
 Title: "The Amazing Movie"
-Category: "65a1b2c3d4e5f6g7h8i9j0k3"
+Category: "65a1b2c3d4e5f6g7h8i9j0k3"   (MongoDB ObjectId of the main category)
 ```
+
+**Conditional requirement:** If you attach a **`video`** file, you must also attach a **`thumbnail`** image (same request).
 
 **Optional Fields:**
 ```
@@ -66,10 +68,11 @@ MetaKeywords: ["action", "adventure", "thriller"] (JSON array as string)
 Tags: ["action", "superhero", "2024"] (JSON array as string)
 Genre: ["Action", "Adventure"] (JSON array as string)
 Cast: ["65a1b2c3d4e5f6g7h8i9j0k8", "65a1b2c3d4e5f6g7h8i9j0k9"] (JSON array of Actor IDs as string, or comma-separated actor IDs)
+actors: (alias for Cast — same formats as Cast)
 Country: "United States" (Country name where the movie was produced)
 Language: "English" (Primary language of the movie)
 IsPremium: "true" (boolean as string - default: false)
-sourceQuality: "1080p" (Quality of uploaded video - will auto-convert to lower qualities)
+sourceQuality: "1080p" (optional label for this file: `480p`, `720p`, or `1080p` — stored on the single uploaded video entry)
 ```
 
 **File Uploads:**
@@ -77,30 +80,37 @@ sourceQuality: "1080p" (Quality of uploaded video - will auto-convert to lower q
 thumbnail: <image file> (JPEG, PNG, WebP, GIF - Max 10MB)
 poster: <image file> (JPEG, PNG, WebP, GIF - Max 10MB)
 video: <video file> (MP4, WebM, QuickTime - Max 5GB per file)
-  - Upload ONE high-quality video (1080p recommended)
-  - System will AUTOMATICALLY CONVERT to lower qualities and upload them separately to S3
-  - If you upload 1080p → Converts to 720p and 480p, uploads both to S3
-  - If you upload 720p → Converts to 480p, uploads to S3
-  - If you upload 480p → No conversion needed
-  - Conversion happens automatically in background after original upload completes
-  - All quality versions are stored in the movie's Videos array
+  - Upload **one** video file per create request; it is stored as-is (no server-side transcoding).
+  - The file is saved to storage and referenced once in the movie `Videos` array.
 subtitle: <subtitle file> (SRT, VTT - Max 10MB)
   - Can upload multiple subtitles for different languages
   - Use subtitleLanguages[] and subtitleLanguageCodes[] arrays
   - Example: subtitleLanguages[0]="English", subtitleLanguageCodes[0]="en"
 ```
 
-**Auto-Conversion Logic:**
-- Upload 1080p → Automatically converts to 720p and 480p, then uploads both converted videos to S3 separately
-- Upload 720p → Automatically converts to 480p, then uploads converted video to S3
-- Upload 480p → No conversion needed
+**Field name aliases (same meaning as the canonical name):**
 
-**Important:** 
-- **Aspect ratio is preserved** - The original video's aspect ratio is maintained during conversion. Only the resolution is reduced, not the aspect ratio.
-- Video conversion happens automatically in the background after the original video is uploaded to S3.
-- The converted videos are processed using FFmpeg and uploaded to S3 as separate files.
-- All quality versions are added to the movie's Videos array.
-- Conversion time depends on video length and server resources.
+| Canonical field | Accepted aliases |
+|-----------------|------------------|
+| `Category` (main category) | `mainCategory`, `categoryId` |
+| `SubCategory` | `subCategory`, `subcategoryId` |
+| `Channel` | `channelId` |
+| `Cast` | `actors`, `Actors` |
+
+If both `SubCategory` and `Category` are sent, the subcategory must belong to that main category (otherwise `400`).
+
+**Upload size limits (`uploadLimits` in responses):**
+
+| Key | Meaning |
+|-----|---------|
+| `maxVideoFileSizeBytes` | Max video file size (bytes), currently 5 GiB |
+| `maxThumbnailFileSizeBytes` | Max thumbnail size (bytes), currently 10 MiB |
+| `maxPosterFileSizeBytes` | Max poster size (bytes), currently 10 MiB |
+| `maxSubtitleFileSizeBytes` | Max subtitle file size (bytes), currently 10 MiB |
+| `maxVideoFileSizeLabel` | Human-readable video limit, e.g. `"5GB"` |
+| `maxImageFileSizeLabel` | Human-readable image limit, e.g. `"10MB"` |
+
+**Important:** Encode the video to the resolution you want in the client or editor before upload; the API does not re-encode or generate additional qualities.
 
 **Example cURL Request:**
 ```bash
@@ -147,15 +157,15 @@ const response = await fetch('http://localhost:3000/api/admin/movies/queue-uploa
 
 const result = await response.json();
 const movieId = result.data.movie._id;
+const baseUrl = 'http://localhost:3000';
+const progressUrl = `${baseUrl}${result.data.uploadProgressUrl || `/api/admin/movies/${movieId}/upload-progress`}`;
+// result.data.uploadLimits — max sizes for video, thumbnail, poster, subtitle
 
 // Step 2: Poll for upload progress
 const progressInterval = setInterval(async () => {
-  const progressRes = await fetch(
-    `http://localhost:3000/api/admin/movies/${movieId}/upload-progress`,
-    {
-      headers: { 'Authorization': 'Bearer <admin-token>' }
-    }
-  );
+  const progressRes = await fetch(progressUrl, {
+    headers: { 'Authorization': 'Bearer <admin-token>' }
+  });
   const progressData = await progressRes.json();
   
   console.log(`Overall Progress: ${progressData.data.overallProgress}%`);
@@ -211,12 +221,51 @@ const progressInterval = setInterval(async () => {
         "fileName": "video1080p.mp4",
         "status": "pending"
       }
-    ]
+    ],
+    "uploadProgressUrl": "/api/admin/movies/65a1b2c3d4e5f6g7h8i9j0k6/upload-progress",
+    "uploadLimits": {
+      "maxVideoFileSizeBytes": 5368709120,
+      "maxThumbnailFileSizeBytes": 10485760,
+      "maxPosterFileSizeBytes": 10485760,
+      "maxSubtitleFileSizeBytes": 10485760,
+      "maxVideoFileSizeLabel": "5GB",
+      "maxImageFileSizeLabel": "10MB"
+    }
   }
 }
 ```
 
-**Note:** Files are queued for background upload. Use the progress endpoint to track upload status.
+**Error Response (400) — examples:**
+```json
+{
+  "success": false,
+  "message": "Title is required.",
+  "uploadLimits": { "...": "same shape as success.data.uploadLimits" }
+}
+```
+```json
+{
+  "success": false,
+  "message": "Main category is required (field: Category, or alias mainCategory / categoryId).",
+  "uploadLimits": { "...": "..." }
+}
+```
+```json
+{
+  "success": false,
+  "message": "Thumbnail is required when uploading a video file.",
+  "uploadLimits": { "...": "..." }
+}
+```
+```json
+{
+  "success": false,
+  "message": "Subcategory does not belong to the selected main category",
+  "uploadLimits": { "...": "..." }
+}
+```
+
+**Note:** Files are queued for background upload. Poll `data.uploadProgressUrl` (or `GET /api/admin/movies/:movieId/upload-progress`) to track upload status. Use `uploadLimits` on the client to validate file sizes before sending.
 
 ---
 
@@ -271,9 +320,18 @@ Authorization: Bearer <admin-token>
         "status": "processing",
         "uploadedSize": 2147483648,
         "totalSize": 4767483648,
-        "s3Url": null
+        "s3Url": null,
+        "error": null
       }
-    ]
+    ],
+    "uploadLimits": {
+      "maxVideoFileSizeBytes": 5368709120,
+      "maxThumbnailFileSizeBytes": 10485760,
+      "maxPosterFileSizeBytes": 10485760,
+      "maxSubtitleFileSizeBytes": 10485760,
+      "maxVideoFileSizeLabel": "5GB",
+      "maxImageFileSizeLabel": "10MB"
+    }
   }
 }
 ```
@@ -322,44 +380,112 @@ Authorization: Bearer <admin-token>
 
 ### 4. Create Movie with Immediate Upload (LEGACY)
 
-Create a new movie with immediate file upload (blocks until upload completes). Use `/queue-upload` endpoint instead for better performance.
+Create a new movie with **synchronous** upload to storage (the HTTP request waits until uploads finish). For large videos, prefer **`POST /api/admin/movies/queue-upload`**.
 
 **Endpoint:** `POST /api/admin/movies/upload`
 
-**Note:** This endpoint uploads files immediately. For large files, use `/queue-upload` instead.
+**Headers:**
+```
+Authorization: Bearer <admin-token>
+Content-Type: multipart/form-data
+```
+
+**Form fields:** Same as **Create Movie and Queue Files** (section 1 above): `Title`, `Category` (required), optional `SubCategory`, `SubSubCategory`, `Channel`, `Cast` / `actors`, `Description`, `Tags`, `Genre`, `MetaKeywords`, `sourceQuality`, etc. **Field aliases** (`mainCategory`, `categoryId`, `subCategory`, `channelId`, …) behave the same. If you send a **`video`** file, you must also send **`thumbnail`**.
+
+**Files:** `thumbnail`, `poster`, `video`, `subtitle` (same MIME types and size limits as queue-upload).
+
+**Success Response (201):**
+```json
+{
+  "success": true,
+  "message": "Movie created successfully",
+  "data": {
+    "_id": "65a1b2c3d4e5f6g7h8i9j0k6",
+    "Title": "The Amazing Movie",
+    "Slug": "the-amazing-movie",
+    "Category": "65a1b2c3d4e5f6g7h8i9j0k3",
+    "Thumbnail": "https://...",
+    "Videos": [ { "Quality": "1080p", "Url": "https://...", "FileSize": 12345678, "IsOriginal": true } ],
+    "uploadId": "upload-1710000000000-a1b2c3d4e5f6g7h8"
+  },
+  "upload": {
+    "uploadLimits": {
+      "maxVideoFileSizeBytes": 5368709120,
+      "maxThumbnailFileSizeBytes": 10485760,
+      "maxPosterFileSizeBytes": 10485760,
+      "maxSubtitleFileSizeBytes": 10485760,
+      "maxVideoFileSizeLabel": "5GB",
+      "maxImageFileSizeLabel": "10MB"
+    },
+    "progressUrl": "/api/admin/movies/upload-progress/upload-1710000000000-a1b2c3d4e5f6g7h8"
+  }
+}
+```
+
+Use `data.uploadId` with the legacy progress route below (`progressUrl` is `GET` base path + `uploadId`).
+
+**Error Response (400 / validation):** Same error messages and `uploadLimits` object as in **section 1** (queue-upload error examples).
 
 ---
 
 ### 5. Get Upload Progress by Upload ID (LEGACY)
 
-Track the progress of movie upload using upload ID (for immediate upload endpoint).
+Used with **`POST /api/admin/movies/upload`** only. Poll **`upload.progressUrl`** from the create response, or call:
 
 **Endpoint:** `GET /api/admin/movies/upload-progress/:uploadId`
+
+Path parameter **`uploadId`** is the prefix shared by all rows for that upload (the value in `data.uploadId` from the create response, e.g. `upload-1710000000000-a1b2c3d4e5f6g7h8`).
+
+**Headers:**
+```
+Authorization: Bearer <admin-token>
+```
 
 **Success Response (200):**
 ```json
 {
   "success": true,
   "data": {
-    "uploadId": "upload-1234567890-abcdef12",
+    "uploadId": "upload-1710000000000-a1b2c3d4e5f6g7h8",
     "overallProgress": 75,
     "status": "processing",
     "files": [
       {
-        "_id": "65a1b2c3d4e5f6g7h8i9j0k7",
-        "UploadId": "upload-1234567890-abcdef12-thumbnail",
-        "FileName": "thumbnail.jpg",
-        "FileType": "thumbnail",
-        "TotalSize": 1048576,
-        "UploadedSize": 1048576,
-        "Progress": 100,
-        "Status": "completed",
-        "S3Url": "https://bucket.s3.region.amazonaws.com/thumbnails/thumbnail.jpg"
+        "uploadId": "upload-1710000000000-a1b2c3d4e5f6g7h8-thumbnail",
+        "fileName": "thumbnail.jpg",
+        "fileType": "thumbnail",
+        "totalSize": 1048576,
+        "uploadedSize": 1048576,
+        "progress": 100,
+        "status": "completed",
+        "error": null
+      },
+      {
+        "uploadId": "upload-1710000000000-a1b2c3d4e5f6g7h8-video",
+        "fileName": "movie.mp4",
+        "fileType": "video",
+        "totalSize": 4767483648,
+        "uploadedSize": 2383741824,
+        "progress": 50,
+        "status": "uploading",
+        "error": null
       }
-    ]
+    ],
+    "uploadLimits": {
+      "maxVideoFileSizeBytes": 5368709120,
+      "maxThumbnailFileSizeBytes": 10485760,
+      "maxPosterFileSizeBytes": 10485760,
+      "maxSubtitleFileSizeBytes": 10485760,
+      "maxVideoFileSizeLabel": "5GB",
+      "maxImageFileSizeLabel": "10MB"
+    }
   }
 }
 ```
+
+**`data.status` values:** `completed` (all files done), `failed` (at least one failed), or `processing` (still uploading/processing).
+
+**`files[].status` values:** `pending`, `uploading`, `processing`, `completed`, `failed`.
 
 ---
 
@@ -477,20 +603,6 @@ curl -X GET "https://api.example.com/api/admin/movies/65a1b2c3d4e5f6g7h8i9j0k6" 
     "Thumbnail": "https://bucket.s3.region.amazonaws.com/thumbnails/thumb.jpg",
     "Poster": "https://bucket.s3.region.amazonaws.com/thumbnails/poster.jpg",
     "Videos": [
-      {
-        "Quality": "480p",
-        "Url": "https://bucket.s3.region.amazonaws.com/movies/video480p.mp4",
-        "Duration": 7200,
-        "FileSize": 1073741824,
-        "IsOriginal": false
-      },
-      {
-        "Quality": "720p",
-        "Url": "https://bucket.s3.region.amazonaws.com/movies/video720p.mp4",
-        "Duration": 7200,
-        "FileSize": 2147483648,
-        "IsOriginal": false
-      },
       {
         "Quality": "1080p",
         "Url": "https://bucket.s3.region.amazonaws.com/movies/video1080p.mp4",
@@ -1388,20 +1500,6 @@ curl -X GET "https://api.example.com/api/movies/id/65a1b2c3d4e5f6g7h8i9j0k6" \
     "TrailerUrl": "https://example.com/trailer.mp4",
     "Videos": [
       {
-        "Quality": "480p",
-        "Url": "https://bucket.s3.region.amazonaws.com/movies/video480p.mp4",
-        "Duration": 7200,
-        "FileSize": 1073741824,
-        "IsOriginal": false
-      },
-      {
-        "Quality": "720p",
-        "Url": "https://bucket.s3.region.amazonaws.com/movies/video720p.mp4",
-        "Duration": 7200,
-        "FileSize": 2147483648,
-        "IsOriginal": false
-      },
-      {
         "Quality": "1080p",
         "Url": "https://bucket.s3.region.amazonaws.com/movies/video1080p.mp4",
         "Duration": 7200,
@@ -1519,7 +1617,7 @@ curl -X GET "https://api.example.com/api/movies/id/65a1b2c3d4e5f6g7h8i9j0k6" \
 ```
 
 **Note:** This endpoint returns all movie details including:
-- All video qualities (480p, 720p, 1080p)
+- Video entries in `Videos` (one or more files, depending on what was uploaded)
 - All subtitles with languages
 - Complete cast information with actor details
 - Channel information with logo
@@ -1555,22 +1653,11 @@ X-Country-Code: US
     "Poster": "https://bucket.s3.region.amazonaws.com/thumbnails/poster.jpg",
     "Videos": [
       {
-        "Quality": "480p",
-        "Url": "https://bucket.s3.region.amazonaws.com/movies/video480p.mp4",
-        "Duration": 7200,
-        "FileSize": 1073741824
-      },
-      {
-        "Quality": "720p",
-        "Url": "https://bucket.s3.region.amazonaws.com/movies/video720p.mp4",
-        "Duration": 7200,
-        "FileSize": 2147483648
-      },
-      {
         "Quality": "1080p",
         "Url": "https://bucket.s3.region.amazonaws.com/movies/video1080p.mp4",
         "Duration": 7200,
-        "FileSize": 4294967296
+        "FileSize": 4294967296,
+        "IsOriginal": true
       }
     ],
     "Subtitles": [
@@ -2092,21 +2179,9 @@ replyIndex: 0 (optional) - Index of reply to like (for liking replies)
 - **SubCategory** → Second level (e.g., "Superhero" under "Action")
 - **SubSubCategory** → Third level (e.g., "Marvel" under "Superhero")
 
-### Video Quality Auto-Conversion
-- Upload 1080p → Automatically converts to 720p and 480p, then uploads both converted videos to S3 separately
-- Upload 720p → Automatically converts to 480p, then uploads converted video to S3
-- Upload 480p → No conversion needed
-
-**Technical Details:**
-- Uses FFmpeg for video conversion (requires FFmpeg to be installed on the server)
-- Conversion happens automatically after original video upload completes
-- Each converted quality is uploaded to S3 as a separate file
-- All quality versions are added to the movie's Videos array
-- **Aspect ratio is preserved** - Original video aspect ratio is maintained during conversion
-- Conversion settings (max dimensions, actual dimensions maintain aspect ratio):
-  - 480p: Max 854x480, 1 Mbps bitrate
-  - 720p: Max 1280x720, 2.5 Mbps bitrate
-  - 1080p: Max 1920x1080, 5 Mbps bitrate
+### Video uploads (single file)
+- Each movie create/upload flow stores **one** video file per request (no automatic transcoding or extra renditions).
+- Optional extra qualities can be added later via admin endpoints that append to `Videos` (if you implement that workflow).
 
 ### Background Upload System (Queue-Based)
 

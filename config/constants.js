@@ -82,5 +82,14 @@ module.exports = {
     ADS: 'ads',
     THUMBNAILS: 'thumbnails',
   },
+  // Must match multer limits in middleware/upload.middleware.js
+  MOVIE_UPLOAD_LIMITS: {
+    maxVideoFileSizeBytes: 5 * 1024 * 1024 * 1024,
+    maxThumbnailFileSizeBytes: 10 * 1024 * 1024,
+    maxPosterFileSizeBytes: 10 * 1024 * 1024,
+    maxSubtitleFileSizeBytes: 10 * 1024 * 1024,
+    maxVideoFileSizeLabel: '5GB',
+    maxImageFileSizeLabel: '10MB',
+  },
 };
 

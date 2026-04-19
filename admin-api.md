@@ -528,9 +528,197 @@ Authorization: Bearer <admin-token>
 
 ## 🎬 Movie Management APIs
 
-### 1. Create Movie with Upload Progress (Enhanced)
+Admin routes require `Authorization: Bearer <admin-token>` and an admin-capable account.
 
-Create a new movie with automatic video conversion, upload progress tracking, and all metadata.
+### Admin movie uploads — quick reference
+
+| Action | Method & path |
+|--------|----------------|
+| Create movie + queue files (**recommended**) | `POST /api/admin/movies/queue-upload` |
+| Poll queued upload progress | `GET /api/admin/movies/:id/upload-progress` |
+| Retry a failed queue job | `POST /api/admin/movies/upload-jobs/:jobId/retry` |
+| Create movie + upload immediately (**legacy**) | `POST /api/admin/movies/upload` |
+| Poll legacy upload progress | `GET /api/admin/movies/upload-progress/:uploadId` |
+| Append another video quality to a movie | `POST /api/admin/movies/:id/video` |
+
+---
+
+### 1. Create movie and queue file uploads (recommended)
+
+Creates the movie in the database, then queues **thumbnail**, **poster**, **one video**, and **subtitle** files for the background worker to upload to S3. Run the upload worker separately (`npm run worker` or `ENABLE_UPLOAD_WORKER=true node workers/uploadWorker.js`).
+
+**Endpoint:** `POST /api/admin/movies/queue-upload`  
+**Content-Type:** `multipart/form-data`
+
+**Required fields:** `Title`, `Category` (main category MongoDB id). Aliases: `mainCategory`, `categoryId`.
+
+**If you send `video`:** you must send **`thumbnail`** in the same request.
+
+**Common optional fields:** `Description`, `SubCategory` (aliases: `subCategory`, `subcategoryId`), `SubSubCategory`, `Channel` (alias: `channelId`), `Cast` or `actors` (JSON array string or comma-separated actor ids), `Tags`, `Genre`, `MetaKeywords`, `Country`, `Language`, `IsPremium`, `sourceQuality` (`480p` \| `720p` \| `1080p`, default `1080p` — stored as the label for that single file; **no server transcoding**).
+
+**Files:** `thumbnail`, `poster`, `video` (one file, max 5GB), `subtitle` (repeat field for multiple; pair with `subtitleLanguages[n]` and `subtitleLanguageCodes[n]`).
+
+**Success response (201):**
+```json
+{
+  "success": true,
+  "message": "Movie created and files queued for upload",
+  "data": {
+    "movie": {
+      "_id": "65a1b2c3d4e5f6g7h8i9j0k6",
+      "Title": "The Amazing Movie",
+      "Slug": "the-amazing-movie"
+    },
+    "queuedJobs": 3,
+    "jobs": [
+      { "_id": "65a1b2c3d4e5f6g7h8i9j0k11", "fileType": "thumbnail", "fileName": "thumb.jpg", "status": "pending" },
+      { "_id": "65a1b2c3d4e5f6g7h8i9j0k12", "fileType": "poster", "fileName": "poster.jpg", "status": "pending" },
+      { "_id": "65a1b2c3d4e5f6g7h8i9j0k13", "fileType": "video", "fileName": "movie.mp4", "status": "pending" }
+    ],
+    "uploadProgressUrl": "/api/admin/movies/65a1b2c3d4e5f6g7h8i9j0k6/upload-progress",
+    "uploadLimits": {
+      "maxVideoFileSizeBytes": 5368709120,
+      "maxThumbnailFileSizeBytes": 10485760,
+      "maxPosterFileSizeBytes": 10485760,
+      "maxSubtitleFileSizeBytes": 10485760,
+      "maxVideoFileSizeLabel": "5GB",
+      "maxImageFileSizeLabel": "10MB"
+    }
+  }
+}
+```
+
+**Error response (400):** `success: false`, `message` describing validation (e.g. missing title, category, thumbnail when video present, subcategory not under main category). May include `uploadLimits`.
+
+**Example cURL:**
+```bash
+curl -X POST http://localhost:3000/api/admin/movies/queue-upload \
+  -H "Authorization: Bearer <admin-token>" \
+  -F "Title=The Amazing Movie" \
+  -F "Category=65a1b2c3d4e5f6g7h8i9j0k3" \
+  -F "SubCategory=65a1b2c3d4e5f6g7h8i9j0k4" \
+  -F "Channel=65a1b2c3d4e5f6g7h8i9j0k6" \
+  -F "Cast=[\"65a1b2c3d4e5f6g7h8i9j0k8\"]" \
+  -F "sourceQuality=1080p" \
+  -F "thumbnail=@/path/to/thumbnail.jpg" \
+  -F "poster=@/path/to/poster.jpg" \
+  -F "video=@/path/to/movie.mp4"
+```
+
+---
+
+### 2. Get upload progress by movie ID
+
+Poll after **queue-upload**. Uses the movie `_id` returned in `data.movie._id` or the path from `data.uploadProgressUrl`.
+
+**Endpoint:** `GET /api/admin/movies/:id/upload-progress`
+
+**Success response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "movieId": "65a1b2c3d4e5f6g7h8i9j0k6",
+    "overallProgress": 65,
+    "status": "processing",
+    "totalJobs": 3,
+    "completedJobs": 1,
+    "failedJobs": 0,
+    "jobs": [
+      {
+        "_id": "65a1b2c3d4e5f6g7h8i9j0k13",
+        "fileType": "video",
+        "fileName": "movie.mp4",
+        "progress": 45,
+        "status": "processing",
+        "uploadedSize": 2147483648,
+        "totalSize": 4767483648,
+        "error": null,
+        "s3Url": null
+      }
+    ],
+    "uploadLimits": {
+      "maxVideoFileSizeBytes": 5368709120,
+      "maxThumbnailFileSizeBytes": 10485760,
+      "maxPosterFileSizeBytes": 10485760,
+      "maxSubtitleFileSizeBytes": 10485760,
+      "maxVideoFileSizeLabel": "5GB",
+      "maxImageFileSizeLabel": "10MB"
+    }
+  }
+}
+```
+
+**`data.status`:** `pending`, `processing`, `completed`, `failed`, or `no-jobs` if nothing was queued.
+
+---
+
+### 3. Retry failed upload job
+
+**Endpoint:** `POST /api/admin/movies/upload-jobs/:jobId/retry`  
+`:jobId` is the `_id` of a job from the progress response.
+
+**Success response (200):**
+```json
+{
+  "success": true,
+  "message": "Job queued for retry",
+  "data": {
+    "_id": "65a1b2c3d4e5f6g7h8i9j0k13",
+    "status": "pending",
+    "fileType": "video",
+    "fileName": "movie.mp4"
+  }
+}
+```
+
+---
+
+### 4. Get upload progress by upload ID (legacy)
+
+Used only with **immediate upload** (section 5 below). Poll using `uploadId` from `POST /api/admin/movies/upload` (`data.uploadId`).
+
+**Endpoint:** `GET /api/admin/movies/upload-progress/:uploadId`
+
+**Success response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "uploadId": "upload-1710000000000-a1b2c3d4e5f6g7h8",
+    "overallProgress": 80,
+    "status": "processing",
+    "files": [
+      {
+        "uploadId": "upload-1710000000000-a1b2c3d4e5f6g7h8-video",
+        "fileName": "movie.mp4",
+        "fileType": "video",
+        "totalSize": 4767483648,
+        "uploadedSize": 3813986918,
+        "progress": 80,
+        "status": "uploading",
+        "error": null
+      }
+    ],
+    "uploadLimits": {
+      "maxVideoFileSizeBytes": 5368709120,
+      "maxThumbnailFileSizeBytes": 10485760,
+      "maxPosterFileSizeBytes": 10485760,
+      "maxSubtitleFileSizeBytes": 10485760,
+      "maxVideoFileSizeLabel": "5GB",
+      "maxImageFileSizeLabel": "10MB"
+    }
+  }
+}
+```
+
+---
+
+### 5. Create movie with immediate upload (legacy)
+
+Create a new movie with **synchronous** upload to storage (the HTTP request waits until files are uploaded). **One video file** per request; no server-side transcoding. For large files, use **section 1** (`queue-upload`) instead.
+
+Uses the same **field aliases** and rules as section 1: if you send **`video`**, you must send **`thumbnail`** in the same request.
 
 **Endpoint:** `POST /api/admin/movies/upload`
 
@@ -567,7 +755,7 @@ ReleaseDate: "2024-01-01"
 BlockedCountries: ["CN", "RU"] (JSON array as string)
 TrailerUrl: "https://youtube.com/watch?v=trailer"
 IsPremium: "true" (boolean as string - default: false)
-sourceQuality: "1080p" (Quality of uploaded video - will auto-convert to lower qualities)
+sourceQuality: "1080p" (optional label: `480p`, `720p`, or `1080p` for the single uploaded file)
 ```
 
 **File Uploads:**
@@ -575,21 +763,12 @@ sourceQuality: "1080p" (Quality of uploaded video - will auto-convert to lower q
 thumbnail: <image file> (JPEG, PNG, WebP, GIF - Max 10MB)
 poster: <image file> (JPEG, PNG, WebP, GIF - Max 10MB)
 video: <video file> (MP4, WebM, QuickTime - Max 5GB per file)
-  - Upload ONE high-quality video (1080p recommended)
-  - System will AUTO-CONVERT to 480p and 720p
-  - If you upload 720p, it will convert to 480p
-  - If you upload 1080p, it will convert to 480p and 720p
-  - Conversion happens in background after upload
+  - One video per request; stored as-is (no automatic conversion to other qualities)
 subtitle: <subtitle file> (SRT, VTT - Max 10MB)
   - Can upload multiple subtitles for different languages
   - Use subtitleLanguages[] and subtitleLanguageCodes[] arrays
   - Example: subtitleLanguages[0]="English", subtitleLanguageCodes[0]="en"
 ```
-
-**Auto-Conversion Logic:**
-- Upload 1080p → Auto-converts to 720p and 480p
-- Upload 720p → Auto-converts to 480p
-- Upload 480p → No conversion needed
 
 **Example cURL Request:**
 ```bash
@@ -622,8 +801,6 @@ curl -X POST http://localhost:3000/api/admin/movies/upload \
   -F "subtitleLanguageCodes[0]=en"
 ```
 
-**Note:** When you upload a 1080p video, the system will automatically queue conversion jobs for 720p and 480p. The conversion happens in the background.
-
 **Example JavaScript/FormData with Progress Tracking:**
 ```javascript
 const formData = new FormData();
@@ -638,7 +815,7 @@ formData.append('IsPremium', 'false');
 formData.append('sourceQuality', '1080p');
 formData.append('thumbnail', thumbnailFile);
 formData.append('poster', posterFile);
-formData.append('video', video1080pFile); // Upload high quality, auto-converts
+formData.append('video', video1080pFile);
 
 const xhr = new XMLHttpRequest();
 
@@ -719,22 +896,31 @@ xhr.send(formData);
         "IsOriginal": true
       }
     ],
-    "PendingQualities": ["480p", "720p"],
-    "ConversionJobId": "job-1234567890",
     "Subtitles": [],
     "CreatedBy": "65a1b2c3d4e5f6g7h8i9j0k2",
     "createdAt": "2024-01-15T10:30:00.000Z",
-    "updatedAt": "2024-01-15T10:30:00.000Z"
+    "updatedAt": "2024-01-15T10:30:00.000Z",
+    "uploadId": "upload-1710000000000-a1b2c3d4e5f6g7h8"
   },
-  "uploadId": "550e8400-e29b-41d4-a716-446655440000"
+  "upload": {
+    "uploadLimits": {
+      "maxVideoFileSizeBytes": 5368709120,
+      "maxThumbnailFileSizeBytes": 10485760,
+      "maxPosterFileSizeBytes": 10485760,
+      "maxSubtitleFileSizeBytes": 10485760,
+      "maxVideoFileSizeLabel": "5GB",
+      "maxImageFileSizeLabel": "10MB"
+    },
+    "progressUrl": "/api/admin/movies/upload-progress/upload-1710000000000-a1b2c3d4e5f6g7h8"
+  }
 }
 ```
 
-**Note:** The `uploadId` is returned for tracking upload progress. Use it with the upload progress endpoint.
+**Note:** Poll `GET /api/admin/movies/upload-progress/:uploadId` using `data.uploadId` (or `upload.progressUrl`).
 
 ---
 
-### 2. Get All Movies
+### 6. Get All Movies
 
 Retrieve all movies with filtering and pagination.
 
@@ -811,7 +997,7 @@ GET /api/admin/movies?status=active&isTrending=true&page=1&limit=20
 
 ---
 
-### 3. Get Movie by ID
+### 7. Get Movie by ID
 
 Retrieve a specific movie by its ID.
 
@@ -829,20 +1015,6 @@ Retrieve a specific movie by its ID.
     "Thumbnail": "https://bucket.s3.region.amazonaws.com/thumbnails/thumb.jpg",
     "Poster": "https://bucket.s3.region.amazonaws.com/thumbnails/poster.jpg",
     "Videos": [
-      {
-        "Quality": "480p",
-        "Url": "https://bucket.s3.region.amazonaws.com/movies/video480p.mp4",
-        "Duration": 7200,
-        "FileSize": 1073741824,
-        "IsOriginal": false
-      },
-      {
-        "Quality": "720p",
-        "Url": "https://bucket.s3.region.amazonaws.com/movies/video720p.mp4",
-        "Duration": 7200,
-        "FileSize": 2147483648,
-        "IsOriginal": false
-      },
       {
         "Quality": "1080p",
         "Url": "https://bucket.s3.region.amazonaws.com/movies/video1080p.mp4",
@@ -882,7 +1054,7 @@ Retrieve a specific movie by its ID.
 
 ---
 
-### 4. Update Movie
+### 8. Update Movie
 
 Update an existing movie.
 
@@ -917,7 +1089,7 @@ poster: <file> (optional)
 
 ---
 
-### 5. Delete Movie
+### 9. Delete Movie
 
 Delete a movie permanently (also deletes associated files from S3).
 
@@ -933,7 +1105,7 @@ Delete a movie permanently (also deletes associated files from S3).
 
 ---
 
-### 6. Upload Video Quality
+### 10. Upload Video Quality
 
 Upload a video file for a specific quality.
 
@@ -971,7 +1143,7 @@ quality: "1080p"
 
 ---
 
-### 7. Upload Subtitle
+### 11. Upload Subtitle
 
 Upload a subtitle file for an existing movie.
 
@@ -1075,9 +1247,11 @@ fetch('http://localhost:3000/api/admin/movies/65a1b2c3d4e5f6g7h8i9j0k6/subtitle'
 
 ---
 
-### 7.1. Upload Multiple Videos at Once
+### 11.1. Upload Multiple Videos at Once
 
-You can upload multiple video qualities in a single request when creating a movie. Use array notation in form data:
+**Recommended create flows (sections 1 and 5)** accept **one** `video` file per request. To add more qualities after creation, use **`POST /api/admin/movies/:id/video`** (section 10) once per file.
+
+Some legacy **`POST /api/admin/movies`** create handlers may accept multiple files with array notation:
 
 **Example:**
 ```
@@ -1093,7 +1267,7 @@ qualities[2]: "480p"
 
 ---
 
-### 7.2. Upload Multiple Subtitles at Once
+### 11.2. Upload Multiple Subtitles at Once
 
 You can upload multiple subtitle files in a single request when creating a movie:
 
@@ -1112,7 +1286,7 @@ subtitleLanguageCodes[2]: "fr"
 
 ---
 
-### 7.3. File Upload Specifications
+### 11.3. File Upload Specifications
 
 **Thumbnail/Poster Images:**
 - **Formats:** JPEG, PNG, WebP, GIF
@@ -1135,7 +1309,7 @@ subtitleLanguageCodes[2]: "fr"
 
 ---
 
-### 7.4. Complete Movie Upload Example
+### 11.4. Complete Movie Upload Example
 
 **Full Example with All Files:**
 
@@ -1255,7 +1429,7 @@ curl -X POST http://localhost:3000/api/admin/movies \
 
 ---
 
-### 8. Toggle Trending Status
+### 12. Toggle Trending Status
 
 Add or remove movie from trending section.
 
@@ -1275,7 +1449,7 @@ Add or remove movie from trending section.
 
 ---
 
-### 9. Toggle Featured Status
+### 13. Toggle Featured Status
 
 Add or remove movie from featured section.
 
@@ -1295,7 +1469,7 @@ Add or remove movie from featured section.
 
 ---
 
-### 10. DMCA Takedown
+### 14. DMCA Takedown
 
 Apply DMCA takedown to a movie.
 
@@ -1330,7 +1504,7 @@ Content-Type: application/json
 
 ---
 
-### 11. Update Country Block
+### 15. Update Country Block
 
 Block or unblock countries for a movie.
 
@@ -1364,7 +1538,7 @@ Content-Type: application/json
 
 ---
 
-### 12. Update Age Restriction
+### 16. Update Age Restriction
 
 Update age restriction for a movie.
 

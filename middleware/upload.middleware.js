@@ -1,9 +1,11 @@
 const multer = require('multer');
-const { S3_BUCKETS } = require('../config/constants');
-const { uploadFileToS3 } = require('./aws.setup'); // Import S3 upload function
+const { MOVIE_UPLOAD_LIMITS } = require('../config/constants');
 
 // Use memory storage - files will be uploaded to S3 in controllers
 const storage = multer.memoryStorage();
+
+const { maxVideoFileSizeBytes, maxThumbnailFileSizeBytes, maxSubtitleFileSizeBytes } =
+  MOVIE_UPLOAD_LIMITS;
 
 /**
  * Upload configuration for movies
@@ -11,7 +13,7 @@ const storage = multer.memoryStorage();
 const movieUpload = multer({
   storage: storage,
   limits: {
-    fileSize: 5 * 1024 * 1024 * 1024, // 5GB
+    fileSize: maxVideoFileSizeBytes,
   },
   fileFilter: (req, file, cb) => {
     const allowedTypes = ['video/mp4', 'video/webm', 'video/quicktime'];
@@ -29,7 +31,7 @@ const movieUpload = multer({
 const subtitleUpload = multer({
   storage: storage,
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB
+    fileSize: maxSubtitleFileSizeBytes,
   },
   fileFilter: (req, file, cb) => {
     const allowedTypes = ['text/vtt', 'application/x-subrip', 'text/plain'];
@@ -47,7 +49,7 @@ const subtitleUpload = multer({
 const imageUpload = multer({
   storage: storage,
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB
+    fileSize: maxThumbnailFileSizeBytes,
   },
   fileFilter: (req, file, cb) => {
     const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
@@ -76,7 +78,7 @@ const adMediaUpload = multer({
 const movieWithImagesUpload = multer({
   storage: storage,
   limits: {
-    fileSize: 5 * 1024 * 1024 * 1024, // 5GB (for videos)
+    fileSize: maxVideoFileSizeBytes,
   },
   fileFilter: (req, file, cb) => {
     const allowedImageTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];

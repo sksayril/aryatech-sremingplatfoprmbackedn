@@ -49,16 +49,6 @@ const movieSchema = new mongoose.Schema(
         },
       },
     ],
-    // Video conversion tracking
-    ConversionJobId: {
-      type: String,
-    },
-    PendingQualities: [
-      {
-        type: String,
-        enum: Object.values(MOVIE_QUALITIES),
-      },
-    ],
     // Subtitles
     Subtitles: [
       {

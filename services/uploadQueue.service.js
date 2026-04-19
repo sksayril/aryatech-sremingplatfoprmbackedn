@@ -93,63 +93,6 @@ const processUploadJob = async (jobId) => {
     // Update movie record with uploaded file URL
     await updateMovieWithUploadResult(job, uploadResult);
 
-    // If this is an original video, automatically convert and upload other qualities
-    if (job.FileType === 'video' && job.Metadata?.isOriginal) {
-      const sourceQuality = job.Metadata.quality || '1080p';
-      let qualitiesToConvert = [];
-      
-      if (sourceQuality === '1080p') {
-        qualitiesToConvert = ['720p', '480p'];
-      } else if (sourceQuality === '720p') {
-        qualitiesToConvert = ['480p'];
-      }
-
-      if (qualitiesToConvert.length > 0) {
-        console.log(`[Upload Queue] Auto-converting video to qualities: ${qualitiesToConvert.join(', ')}`);
-        
-        try {
-          // Convert video using the uploaded video buffer
-          const { convertVideo } = require('./videoConversion.service');
-          const convertedVideos = await convertVideo(job.FileBuffer, qualitiesToConvert);
-
-          // Upload each converted quality
-          for (const [quality, convertedBuffer] of Object.entries(convertedVideos)) {
-            try {
-              const convertedFile = {
-                buffer: convertedBuffer,
-                originalname: `${job.FileName.split('.')[0]}-${quality}.mp4`,
-                mimetype: 'video/mp4',
-                size: convertedBuffer.length,
-              };
-
-              // Create upload job for converted video
-              const conversionJob = await queueUpload({
-                movieId: job.Movie,
-                userId: job.User,
-                fileType: 'video',
-                fileName: convertedFile.originalname,
-                fileBuffer: convertedBuffer,
-                fileSize: convertedBuffer.length,
-                mimeType: 'video/mp4',
-                folder: S3_BUCKETS.MOVIES,
-                metadata: {
-                  quality: quality,
-                  isOriginal: false,
-                },
-              });
-
-              console.log(`[Upload Queue] Queued ${quality} conversion upload job: ${conversionJob._id}`);
-            } catch (conversionError) {
-              console.error(`[Upload Queue] Failed to queue ${quality} upload:`, conversionError.message);
-            }
-          }
-        } catch (conversionError) {
-          console.error(`[Upload Queue] Video conversion failed:`, conversionError.message);
-          // Don't fail the original upload if conversion fails
-        }
-      }
-    }
-
     return {
       success: true,
       job,
