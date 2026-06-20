@@ -257,6 +257,7 @@ exports.createMovieWithProgress = async (req, res) => {
       },
     });
   } catch (error) {
+    console.error('Error in createMovieWithProgress:', error);
     const status = error.statusCode && Number.isInteger(error.statusCode) ? error.statusCode : 400;
     res.status(status).json({
       success: false,

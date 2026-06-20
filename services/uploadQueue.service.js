@@ -5,6 +5,10 @@
 
 require('dotenv').config();
 
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+
 const UploadJob = require('../models/uploadJob.model');
 const { uploadFileToS3 } = require('../middleware/aws.setup'); // Primary S3 upload method using multer memory storage
 const { S3_BUCKETS } = require('../config/constants');
@@ -15,12 +19,24 @@ const Movie = require('../models/movie.model');
  */
 const queueUpload = async (jobData) => {
   try {
+    let filePath = null;
+    if (jobData.fileBuffer) {
+      const tempDir = path.join(__dirname, '../temp');
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir, { recursive: true });
+      }
+      const tempFileName = `upload-${Date.now()}-${crypto.randomBytes(8).toString('hex')}-${jobData.fileName}`;
+      filePath = path.join(tempDir, tempFileName);
+      fs.writeFileSync(filePath, jobData.fileBuffer);
+    }
+
     const job = await UploadJob.create({
       Movie: jobData.movieId,
       User: jobData.userId,
       FileType: jobData.fileType, // 'video', 'thumbnail', 'poster', 'subtitle'
       FileName: jobData.fileName,
-      FileBuffer: jobData.fileBuffer,
+      FilePath: filePath || undefined,
+      FileBuffer: (jobData.fileSize < 5 * 1024 * 1024) ? jobData.fileBuffer : undefined,
       FileSize: jobData.fileSize,
       MimeType: jobData.mimeType,
       Folder: jobData.folder,
@@ -71,9 +87,18 @@ const processUploadJob = async (jobId, alreadyLocked = false) => {
       }
     }
 
-    // Create file object from buffer
+    // Create file object from buffer or disk
+    let fileBuffer = job.FileBuffer;
+    if (!fileBuffer && job.FilePath) {
+      if (fs.existsSync(job.FilePath)) {
+        fileBuffer = fs.readFileSync(job.FilePath);
+      } else {
+        throw new Error(`Temporary file not found at ${job.FilePath}`);
+      }
+    }
+
     const file = {
-      buffer: job.FileBuffer,
+      buffer: fileBuffer,
       originalname: job.FileName,
       mimetype: job.MimeType,
       size: job.FileSize,
@@ -105,6 +130,15 @@ const processUploadJob = async (jobId, alreadyLocked = false) => {
     job.S3Url = uploadResult.url;
     job.CompletedAt = new Date();
     await job.save();
+
+    // Delete temp file after successful upload
+    if (job.FilePath && fs.existsSync(job.FilePath)) {
+      try {
+        fs.unlinkSync(job.FilePath);
+      } catch (err) {
+        console.error(`Failed to delete temp file ${job.FilePath}:`, err.message);
+      }
+    }
 
     // Update movie record with uploaded file URL
     await updateMovieWithUploadResult(job, uploadResult);

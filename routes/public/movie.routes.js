@@ -51,6 +51,9 @@ router.get('/similar/:id', movieController.getSimilarMovies);
 // Get related videos (must come before /:slug)
 router.get('/related/:id', movieController.getRelatedVideos);
 
+// Download movie video (must come before /:slug)
+router.get('/:id/download', movieController.downloadMovieVideo);
+
 // Get movie by slug (must be last as it's the catch-all dynamic route)
 router.get('/:slug', optionalAuth, movieController.getMovieBySlug);
 

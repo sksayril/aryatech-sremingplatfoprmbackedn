@@ -250,7 +250,7 @@ const uploadMultipart = async (file, key, progressCallback) => {
 const upload = multer({ 
   storage: storage,
   limits: {
-    fileSize: 5 * 1024 * 1024 * 1024, // 5GB max file size
+    fileSize: 100 * 1024 * 1024 * 1024, // 100GB max file size
   },
 });
 
@@ -278,7 +278,7 @@ const uploadImage = multer({
 const uploadVideo = multer({
   storage: storage,
   limits: {
-    fileSize: 5 * 1024 * 1024 * 1024, // 5GB
+    fileSize: 100 * 1024 * 1024 * 1024, // 100GB
   },
   fileFilter: (req, file, cb) => {
     const allowedTypes = ['video/mp4', 'video/webm', 'video/quicktime'];
@@ -316,7 +316,7 @@ const uploadSubtitle = multer({
 const uploadMixed = multer({
   storage: storage,
   limits: {
-    fileSize: 5 * 1024 * 1024 * 1024, // 5GB
+    fileSize: 100 * 1024 * 1024 * 1024, // 100GB
   },
   fileFilter: (req, file, cb) => {
     const allowedImageTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];

@@ -1227,3 +1227,100 @@ exports.getAllSubCategories = async (req, res) => {
   }
 };
 
+/**
+ * Download movie video
+ */
+exports.downloadMovieVideo = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { quality } = req.query;
+
+    const movie = await Movie.findById(id);
+    if (!movie) {
+      return res.status(404).json({
+        success: false,
+        message: 'Movie not found',
+      });
+    }
+
+    if (!movie.Videos || movie.Videos.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'No video files available for this movie',
+      });
+    }
+
+    // Find the requested quality, or default to the first one available
+    let video = null;
+    if (quality) {
+      video = movie.Videos.find(v => v.Quality.toLowerCase() === quality.toLowerCase());
+    }
+    if (!video) {
+      video = movie.Videos[0]; // fallback to first video
+    }
+
+    const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
+    const { GetObjectCommand } = require("@aws-sdk/client-s3");
+    const s3Client = require('../../config/aws.config');
+    const BUCKET_NAME = process.env.AWS_S3_BUCKET || 'elboz';
+
+    const extractS3KeyFromUrl = (url) => {
+      if (!url) return null;
+      const index = url.indexOf('movies/');
+      if (index !== -1) {
+        return url.substring(index);
+      }
+      try {
+        const parsedUrl = new URL(url);
+        let pathname = parsedUrl.pathname;
+        if (pathname.startsWith('/')) {
+          pathname = pathname.substring(1);
+        }
+        if (pathname.startsWith(BUCKET_NAME + '/')) {
+          pathname = pathname.substring(BUCKET_NAME.length + 1);
+        }
+        return pathname;
+      } catch (error) {
+        return null;
+      }
+    };
+
+    const s3Key = extractS3KeyFromUrl(video.Url);
+    if (s3Key) {
+      try {
+        const filename = `${movie.Title || 'video'}_${video.Quality || 'video'}.${s3Key.split('.').pop() || 'mp4'}`;
+        const safeFilename = filename.replace(/[^a-zA-Z0-9.-]/g, '_');
+        
+        const command = new GetObjectCommand({
+          Bucket: BUCKET_NAME,
+          Key: s3Key,
+          ResponseContentDisposition: `attachment; filename="${safeFilename}"`,
+        });
+        
+        const signedUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
+        return res.json({
+          success: true,
+          downloadUrl: signedUrl
+        });
+      } catch (err) {
+        console.error('Failed to generate presigned S3 download URL:', err);
+        return res.json({
+          success: true,
+          downloadUrl: video.Url
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      downloadUrl: video.Url
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to generate download URL',
+      error: error.message,
+    });
+  }
+};
+

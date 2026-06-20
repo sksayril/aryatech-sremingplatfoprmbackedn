@@ -474,6 +474,15 @@ exports.deleteUploadQueue = async (req, res) => {
       });
     }
 
+    const fs = require('fs');
+    if (job.FilePath && fs.existsSync(job.FilePath)) {
+      try {
+        fs.unlinkSync(job.FilePath);
+      } catch (err) {
+        console.error(`Failed to delete temp file ${job.FilePath} on deletion:`, err.message);
+      }
+    }
+
     await job.deleteOne();
 
     res.json({

@@ -84,11 +84,11 @@ module.exports = {
   },
   // Must match multer limits in middleware/upload.middleware.js
   MOVIE_UPLOAD_LIMITS: {
-    maxVideoFileSizeBytes: 5 * 1024 * 1024 * 1024,
+    maxVideoFileSizeBytes: 100 * 1024 * 1024 * 1024,
     maxThumbnailFileSizeBytes: 10 * 1024 * 1024,
     maxPosterFileSizeBytes: 10 * 1024 * 1024,
     maxSubtitleFileSizeBytes: 10 * 1024 * 1024,
-    maxVideoFileSizeLabel: '5GB',
+    maxVideoFileSizeLabel: '100GB',
     maxImageFileSizeLabel: '10MB',
   },
 };

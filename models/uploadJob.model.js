@@ -23,7 +23,10 @@ const uploadJobSchema = new mongoose.Schema(
     },
     FileBuffer: {
       type: Buffer,
-      required: true,
+      required: false,
+    },
+    FilePath: {
+      type: String,
     },
     FileSize: {
       type: Number,

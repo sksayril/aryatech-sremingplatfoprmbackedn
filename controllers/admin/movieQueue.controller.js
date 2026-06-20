@@ -148,6 +148,7 @@ exports.createMovieAndQueueUploads = async (req, res) => {
       },
     });
   } catch (error) {
+    console.error('Error in createMovieAndQueueUploads:', error);
     const status = error.statusCode && Number.isInteger(error.statusCode) ? error.statusCode : 400;
     res.status(status).json({
       success: false,

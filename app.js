@@ -55,8 +55,8 @@ app.use(cors({
 
 // Body parsing middleware
 app.use(logger('dev'));
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express.json({ limit: '100gb' }));
+app.use(express.urlencoded({ extended: true, limit: '100gb' }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 

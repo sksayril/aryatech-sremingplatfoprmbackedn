@@ -4,6 +4,14 @@
 const errorHandler = (err, req, res, next) => {
   console.error('Error:', err);
 
+  // Multer file size error
+  if (err.code === 'LIMIT_FILE_SIZE') {
+    return res.status(413).json({
+      success: false,
+      message: 'File too large. Maximum allowed size is 100GB.',
+    });
+  }
+
   // Mongoose validation error
   if (err.name === 'ValidationError') {
     const errors = Object.values(err.errors).map((e) => e.message);
