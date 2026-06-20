@@ -6,7 +6,7 @@
 require('dotenv').config();
 require('../utilities/database'); // Ensure database connection
 
-const { processUploadJob, getPendingJobs } = require('../services/uploadQueue.service');
+const { processUploadJob, getPendingJobs, acquireJobToProcess } = require('../services/uploadQueue.service');
 
 let isProcessing = false;
 let processingInterval = null;
@@ -21,17 +21,18 @@ const processJob = async () => {
 
   try {
     isProcessing = true;
-    const pendingJobs = await getPendingJobs(1); // Get one job at a time
+    
+    // Atomically find and lock a job
+    const job = await acquireJobToProcess();
 
-    if (pendingJobs.length === 0) {
+    if (!job) {
       isProcessing = false;
       return;
     }
 
-    const job = pendingJobs[0];
     console.log(`[${new Date().toISOString()}] Processing upload job ${job._id} (${job.FileType}: ${job.FileName})`);
 
-    await processUploadJob(job._id);
+    await processUploadJob(job._id, true);
     console.log(`[${new Date().toISOString()}] ✅ Completed upload job ${job._id}`);
 
     isProcessing = false;

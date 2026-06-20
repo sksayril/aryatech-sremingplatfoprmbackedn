@@ -38,22 +38,38 @@ const queueUpload = async (jobData) => {
 /**
  * Process a single upload job
  */
-const processUploadJob = async (jobId) => {
+const processUploadJob = async (jobId, alreadyLocked = false) => {
   try {
-    const job = await UploadJob.findById(jobId);
-    
-    if (!job) {
-      throw new Error('Upload job not found');
-    }
+    let job;
+    if (alreadyLocked) {
+      job = await UploadJob.findById(jobId);
+      if (!job) {
+        throw new Error('Upload job not found');
+      }
+      if (job.Status !== 'processing') {
+        throw new Error(`Job is not pending. Current status: ${job.Status}`);
+      }
+    } else {
+      // Atomically acquire the job and set it to processing
+      job = await UploadJob.findOneAndUpdate(
+        { _id: jobId, Status: 'pending' },
+        { 
+          $set: { 
+            Status: 'processing',
+            StartedAt: new Date()
+          } 
+        },
+        { new: true }
+      );
 
-    if (job.Status !== 'pending') {
-      throw new Error(`Job is not pending. Current status: ${job.Status}`);
+      if (!job) {
+        const exists = await UploadJob.findById(jobId);
+        if (!exists) {
+          throw new Error('Upload job not found');
+        }
+        throw new Error(`Job is not pending. Current status: ${exists.Status}`);
+      }
     }
-
-    // Update status to processing
-    job.Status = 'processing';
-    job.StartedAt = new Date();
-    await job.save();
 
     // Create file object from buffer
     const file = {
@@ -267,11 +283,36 @@ const retryJob = async (jobId) => {
   }
 };
 
+/**
+ * Atomically acquire the next pending job and mark it as processing
+ */
+const acquireJobToProcess = async () => {
+  try {
+    const job = await UploadJob.findOneAndUpdate(
+      { Status: 'pending' },
+      { 
+        $set: { 
+          Status: 'processing',
+          StartedAt: new Date()
+        } 
+      },
+      { 
+        new: true,
+        sort: { createdAt: 1 } // FIFO
+      }
+    );
+    return job;
+  } catch (error) {
+    throw new Error(`Failed to acquire job: ${error.message}`);
+  }
+};
+
 module.exports = {
   queueUpload,
   processUploadJob,
   getMovieUploadProgress,
   getPendingJobs,
   retryJob,
+  acquireJobToProcess,
 };
 
